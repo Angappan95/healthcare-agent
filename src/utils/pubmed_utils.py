@@ -1,0 +1,203 @@
+"""
+PubMed utilities for searching and extracting articles.
+
+Provides functions to search PubMed and extract article content using NCBI APIs.
+"""
+import logging
+import requests
+import xml.etree.ElementTree as ET
+from typing import List, Dict, Optional
+
+from config import REQUEST_TIMEOUT, NCBI_ESEARCH_URL, NCBI_EFETCH_URL
+
+logger = logging.getLogger(__name__)
+
+
+def _handle_request_error(error: Exception, context: str = "") -> None:
+    """Log request-related errors."""
+    if isinstance(error, requests.exceptions.HTTPError):
+        status = getattr(error.response, "status_code", "Unknown")
+        reason = getattr(error.response, "reason", "Unknown")
+        logger.error(f"HTTP {status}: {reason} {context}")
+        if status == 404:
+            logger.error(f"Resource not found or unavailable {context}")
+    elif isinstance(error, requests.exceptions.Timeout):
+        logger.error(f"Request timeout after {REQUEST_TIMEOUT}s {context}")
+    elif isinstance(error, requests.exceptions.JSONDecodeError):
+        logger.error(f"Invalid JSON response {context}")
+    else:
+        logger.error(f"Request error: {error} {context}")
+
+
+
+def _extract_text_from_xml(element) -> Optional[str]:
+    """Extract and clean text from an XML element."""
+    if element is None:
+        return None
+    return " ".join(
+        text.strip()
+        for text in element.itertext()
+        if text.strip()
+    )
+
+
+def _extract_authors_from_article(article) -> List[str]:
+    """Extract and format author names from article element."""
+    authors = []
+    for author in article.findall(".//AuthorList/Author"):
+        first_name = author.findtext("ForeName", "").strip()
+        last_name = author.findtext("LastName", "").strip()
+        if first_name or last_name:
+            authors.append(f"{first_name} {last_name}".strip())
+    return authors
+
+
+def _extract_ids_from_article(article) -> Dict[str, str]:
+    """Extract article identifiers (PMCID, DOI) as case-insensitive dict."""
+    return {
+        node.attrib.get("IdType", "").lower(): node.text
+        for node in article.findall(".//ArticleId")
+        if node.text
+    }
+
+
+def _fetch_pmc_full_text(pmcid: str) -> Optional[str]:
+    """
+    Fetch full text from PMC database for given PMCID.
+
+    Returns full text string on success, None on error.
+    """
+    try:
+        response = requests.get(
+            NCBI_EFETCH_URL,
+            params={"db": "pmc", "id": pmcid, "retmode": "xml"},
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+        root = ET.fromstring(response.content)
+        body = root.find(".//body")
+        return _extract_text_from_xml(body) if body is not None else None
+    except (requests.exceptions.RequestException, ET.ParseError) as e:
+        logger.warning(f"Failed to fetch PMC text for PMCID {pmcid}: {str(e)}")
+        return None
+
+
+def _build_markdown_for_article(pmid: str, article_data: Dict) -> str:
+    """Build markdown formatted string for a single article."""
+    lines = [f"## {article_data['title']}\n"]
+    lines.append(f"**Authors:** {', '.join(article_data['authors']) or 'N/A'}\n")
+    lines.append(f"**Journal:** {article_data['journal'] or 'N/A'}\n")
+    lines.append(f"**Publication Date:** {article_data['pub_date'] or 'N/A'}\n")
+    lines.append(f"**PMID:** {pmid}\n")
+
+    if article_data.get("pmcid"):
+        lines.append(f"**PMCID:** {article_data['pmcid']}\n")
+
+    if article_data.get("doi"):
+        lines.append(f"**DOI:** {article_data['doi']}\n")
+
+    if article_data.get("abstract"):
+        lines.append(f"\n### Abstract\n\n{article_data['abstract']}\n")
+
+    if article_data.get("full_text"):
+        lines.append(f"\n### Full Text\n\n{article_data['full_text']}\n")
+
+    return "".join(lines)
+
+
+def search_articles(query: str, max_results: int = 5) -> List[str]:
+    """
+    Search PubMed for articles matching the query and return list of PMIDs.
+
+    Args:
+        query: Search term/query string
+        max_results: Maximum number of results to return (default 5)
+
+    Returns:
+        List of PubMed IDs (PMIDs), or empty list on error.
+    """
+    search_params = {
+        "db": "pubmed",
+        "term": query,
+        "retmode": "json",
+        "retmax": max_results
+    }
+
+    try:
+        response = requests.get(NCBI_ESEARCH_URL, params=search_params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+
+        pmids = response.json().get("esearchresult", {}).get("idlist", [])
+        if pmids:
+            logger.info(f"Found {len(pmids)} articles for query: '{query}'")
+        else:
+            logger.warning(f"No articles found for query: '{query}'")
+        return pmids
+
+    except requests.exceptions.RequestException as e:
+        _handle_request_error(e, f"for query '{query}'")
+        return []
+
+
+def extract_pubmed_articles_as_markdown(pmids: List[str]) -> str:
+    """
+    Fetch articles using a list of PMIDs and return as formatted markdown.
+
+    Args:
+        pmids: List of PubMed IDs to fetch
+
+    Returns:
+        Markdown-formatted string with article details and content.
+        Multiple articles are separated by horizontal rules (---).
+        Returns empty string if no valid articles found.
+    """
+    markdown_output = []
+    session = requests.Session()
+
+    for pmid in pmids:
+        try:
+            # Fetch PubMed metadata
+            response = session.get(
+                NCBI_EFETCH_URL,
+                params={"db": "pubmed", "id": pmid, "retmode": "xml"},
+                timeout=REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+
+            root = ET.fromstring(response.content)
+            article = root.find(".//PubmedArticle")
+
+            if article is None:
+                error_msg = f"No PubMed article found for PMID {pmid}"
+                logger.warning(error_msg)
+                markdown_output.append(f"## Error: {error_msg}")
+                continue
+
+            # Extract IDs
+            ids = _extract_ids_from_article(article)
+            pmcid = ids.get("pmc")
+            doi = ids.get("doi")
+
+            # Build article data dictionary
+            article_data = {
+                "title": _extract_text_from_xml(article.find(".//ArticleTitle")),
+                "authors": _extract_authors_from_article(article),
+                "journal": article.findtext(".//Journal/Title"),
+                "pub_date": _extract_text_from_xml(article.find(".//PubDate")),
+                "pmcid": pmcid,
+                "doi": doi,
+                "abstract": _extract_text_from_xml(article.find(".//Abstract")),
+                "full_text": _fetch_pmc_full_text(pmcid) if pmcid else None,
+            }
+
+            markdown_output.append(_build_markdown_for_article(pmid, article_data))
+            logger.info(f"Successfully extracted article for PMID {pmid}")
+
+        except (requests.exceptions.RequestException, ET.ParseError) as e:
+            error_msg = f"Error fetching PMID {pmid}: {str(e)}"
+            logger.error(error_msg)
+            markdown_output.append(f"## {error_msg}")
+
+    result = "\n---\n".join(markdown_output)
+    logger.info(f"Extracted markdown for {len([m for m in markdown_output if not m.startswith('## Error')])} articles")
+    return result
