@@ -16,7 +16,7 @@ def get_llm():
     """Get or create LLM instance."""
     global _llm_instance
     if _llm_instance is None:
-        _llm_instance = ChatOpenAI(model="gpt-4-turbo-preview", temperature=0.7)
+        _llm_instance = ChatOpenAI(model="gpt-5-nano", temperature=0, max_tokens=500)
     return _llm_instance
 
 
