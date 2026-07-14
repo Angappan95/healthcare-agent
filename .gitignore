@@ -9,8 +9,11 @@ wheels/
 
 # Virtual environments
 .venv
-.github/instructions/wmt-copilot.instructions.md
 
 # System files
 .DS_Store
 settings.json
+
+# md files
+*.md
+.github/instructions/wmt-copilot.instructions.md
