@@ -1,30 +1,24 @@
 import os
 from typing import Dict, Any, Optional
 from langchain_core.tools import tool
-import httpx
+from langgraph.pregel.remote import RemoteGraph
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Service URLs with fallback to localhost
-PUBMED_SERVICE_URL = os.getenv("PUBMED_SERVICE_URL", "http://localhost:8001")
-WEBSEARCH_SERVICE_URL = os.getenv("WEBSEARCH_SERVICE_URL", "http://localhost:8002")
-SYNTHESIS_SERVICE_URL = os.getenv("SYNTHESIS_SERVICE_URL", "http://localhost:8003")
+PUBMED_URL = os.getenv("PUBMED_SERVICE_URL", "http://localhost:8001")
+WEBSEARCH_URL = os.getenv("WEBSEARCH_SERVICE_URL", "http://localhost:8002")
+SYNTHESIS_URL = os.getenv("SYNTHESIS_SERVICE_URL", "http://localhost:8003")
 
-# HTTP client with timeout
-http_client = httpx.Client(timeout=30.0)
+pubmed_graph = RemoteGraph("pubmed_agent", url=PUBMED_URL)
+websearch_graph = RemoteGraph("websearch_agent", url=WEBSEARCH_URL)
+synthesis_graph = RemoteGraph("synthesis_agent", url=SYNTHESIS_URL)
 
 @tool
 def search_pubmed_literature(query: str) -> Dict[str, Any]:
-    """Search peer-reviewed medical literature. Use for scientific evidence, clinical trials, research studies."""
+    """Search peer-reviewed medical literature for scientific evidence, clinical trials, and research studies."""
     try:
-        response = http_client.post(
-            f"{PUBMED_SERVICE_URL}/invoke",
-            json={"query": query}
-        )
-        response.raise_for_status()
-        result = response.json()
-        
+        result = pubmed_graph.invoke({"query": query})
         return {
             "status": "success",
             "agent": "pubmed_agent",
@@ -36,20 +30,14 @@ def search_pubmed_literature(query: str) -> Dict[str, Any]:
             }
         }
     except Exception as e:
-        logger.error(f"PubMed agent failed: {e}")
+        logger.error(f"PubMed failed: {e}")
         return {"status": "error", "agent": "pubmed_agent", "error": str(e), "data": {}}
 
 @tool
 def search_web_sources(query: str) -> Dict[str, Any]:
-    """Search credible health websites (CDC, NIH, Mayo Clinic). Use for symptoms, treatments, patient guidelines."""
+    """Search credible health websites (CDC, NIH, Mayo Clinic) for symptoms, treatments, and patient guidelines."""
     try:
-        response = http_client.post(
-            f"{WEBSEARCH_SERVICE_URL}/invoke",
-            json={"query": query}
-        )
-        response.raise_for_status()
-        result = response.json()
-        
+        result = websearch_graph.invoke({"query": query})
         return {
             "status": "success",
             "agent": "websearch_agent",
@@ -60,27 +48,21 @@ def search_web_sources(query: str) -> Dict[str, Any]:
             }
         }
     except Exception as e:
-        logger.error(f"WebSearch agent failed: {e}")
+        logger.error(f"WebSearch failed: {e}")
         return {"status": "error", "agent": "websearch_agent", "error": str(e), "data": {}}
 
 @tool
 def synthesize_information(query: str, pubmed_results: Optional[Dict] = None, 
                           websearch_results: Optional[Dict] = None) -> Dict[str, Any]:
-    """Synthesize information from PubMed/WebSearch to generate comprehensive response."""
+    """Synthesize information from PubMed and WebSearch to generate a comprehensive response."""
     try:
         context = {}
         if pubmed_results:
-            context['pubmed_results'] = pubmed_results
+            context["pubmed_results"] = pubmed_results
         if websearch_results:
-            context['websearch_results'] = websearch_results
+            context["websearch_results"] = websearch_results
         
-        response = http_client.post(
-            f"{SYNTHESIS_SERVICE_URL}/invoke",
-            json={"query": query, "context": context}
-        )
-        response.raise_for_status()
-        result = response.json()
-        
+        result = synthesis_graph.invoke({"query": query, "context": context})
         return {
             "status": "success",
             "agent": "synthesis_agent",
@@ -90,10 +72,9 @@ def synthesize_information(query: str, pubmed_results: Optional[Dict] = None,
             }
         }
     except Exception as e:
-        logger.error(f"Synthesis agent failed: {e}")
+        logger.error(f"Synthesis failed: {e}")
         return {"status": "error", "agent": "synthesis_agent", "error": str(e), "data": {}}
 
-# Tool collection for LangGraph
 supervisor_tools = [
     search_pubmed_literature,
     search_web_sources,

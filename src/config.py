@@ -21,6 +21,12 @@ LLM_REQUEST_TIMEOUT = 30  # Timeout for LLM API requests (seconds)
 LLM_MAX_RETRIES = 3  # Number of retry attempts for LLM API calls
 LLM_RETRY_BACKOFF_FACTOR = 2  # Exponential backoff: 1s, 2s, 4s, 8s
 
+# Primary and Fallback LLM Models
+PRIMARY_LLM_MODEL = "gemini-3.1-flash-lite"
+PRIMARY_LLM_PROVIDER = "google"
+FALLBACK_LLM_MODEL = "gemini-2.0-flash-lite"  # Gemini 2.0 Flash Lite (separate quota)
+FALLBACK_LLM_PROVIDER = "google"
+
 # LLM Prompt Configuration
 ARTICLE_CHAR_LIMIT = 500  # Maximum characters to include per article in LLM prompt
 

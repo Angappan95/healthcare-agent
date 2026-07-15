@@ -1,10 +1,12 @@
 import sys
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from typing import Any, Dict, Optional
 from src.agents.agent_graphs import create_pubmed_graph
-from src.models.state import PubMedState
 import logging
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,35 +14,35 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="PubMed Agent Service")
 graph = create_pubmed_graph()
 
-class PubMedRequest(BaseModel):
-    query: str
-
-class PubMedResponse(BaseModel):
-    keywords: list[str]
-    pmids: list[str]
-    article_markdown: str
-    error: str | None = None
+class InvokeRequest(BaseModel):
+    input: Dict[str, Any]
+    config: Optional[Dict[str, Any]] = None
 
 @app.get("/health")
-async def health_check():
+def health_check():
     return {"status": "healthy", "service": "pubmed-agent"}
 
-@app.post("/invoke", response_model=PubMedResponse)
-async def invoke_graph(request: PubMedRequest):
-    try:
-        initial_state: PubMedState = {
-            "query": request.query,
-            "keywords": [],
-            "pmids": [],
-            "article_markdown": "",
-            "error": None
-        }
-        result = graph.invoke(initial_state)
-        return PubMedResponse(**result)
-    except Exception as e:
-        logger.error(f"PubMed graph invocation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/runs/stream")
+def runs_stream(request: InvokeRequest):
+    """LangGraph RemoteGraph endpoint with SSE streaming."""
+    def event_stream():
+        try:
+            result = graph.invoke(request.input, config=request.config)
+            logger.info(f"PubMed completed: {list(result.keys())}")
+            # Send result as SSE event
+            yield f"event: data\n"
+            yield f"data: {json.dumps(result)}\n\n"
+            # Send end event
+            yield f"event: end\n"
+            yield f"data: null\n\n"
+        except Exception as e:
+            logger.error(f"PubMed failed: {e}")
+            yield f"event: error\n"
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8001
+    logger.info(f"Starting PubMed Agent on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
