@@ -37,13 +37,42 @@ def receive_query(state: WorkflowState) -> WorkflowState:
     return state
 
 def extract_keywords(state: WorkflowState) -> WorkflowState:
-    """Node 2: Extract keywords from query."""
-    # Simple keyword extraction: split and filter stopwords
-    stopwords = {'what', 'is', 'are', 'a', 'an', 'the', 'and', 'or', 'of', 'in', 'for', 'to', 'from'}
-    words = state['user_query'].lower().split()
-    keywords = [w.strip('?.,!') for w in words if w.lower() not in stopwords and len(w) > 2]
-    state['extracted_keywords'] = keywords
-    logger.info(f"Extracted keywords: {keywords}")
+
+    # Node 2: Extract keywords from query using LLM.
+    
+    try:
+        llm = get_llm()
+        
+        prompt = f"""Extract the 1-2 MOST relevant medical and scientific keywords from the following query for searching PubMed.
+
+Focus on the core medical concept(s):
+- Primary medical condition, disease, or symptom
+- Key treatment or drug (if mentioned)
+
+Query: {state['user_query']}
+
+Return ONLY 1 or 2 keywords maximum, comma-separated, without any explanation or additional text.
+Example: "diabetes, metformin" or "COVID-19" """
+
+        logger.info("Extracting keywords using LLM...")
+        message = llm.invoke(prompt)
+        
+        # Extract keywords from LLM response
+        response_text = message.content if isinstance(message.content, str) else message.content[0]['text']
+        keywords = [k.strip() for k in response_text.split(',') if k.strip()]
+        
+        state['extracted_keywords'] = keywords
+        logger.info(f"Extracted keywords: {keywords}")
+        
+    except Exception as e:
+        logger.error(f"Error extracting keywords with LLM: {e}")
+        # Fallback to simple extraction
+        stopwords = {'what', 'is', 'are', 'a', 'an', 'the', 'and', 'or', 'of', 'in', 'for', 'to', 'from'}
+        words = state['user_query'].lower().split()
+        keywords = [w.strip('?.,!') for w in words if w.lower() not in stopwords and len(w) > 2]
+        state['extracted_keywords'] = keywords
+        logger.warning(f"Fallback to simple keyword extraction: {keywords}")
+    
     return state
 
 def search_pubmed_articles(state: WorkflowState) -> WorkflowState:
@@ -102,7 +131,7 @@ Response should:
     try:
         logger.info("Generating response...")
         llm = get_llm()
-        logger.info("Prompt: %s", prompt)
+        logger.debug("Prompt: %s", prompt)
         message = llm.invoke(prompt)
         state['response'] = message.content[0]['text']
         logger.debug("Response generated: %s", message.content[0]['text'][:500])  
@@ -150,7 +179,7 @@ def run_workflow(user_query: str) -> WorkflowState:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
-    result = run_workflow("What are the latest treatments for COVID-19?")
+    result = run_workflow("What are the latest treatments for type 2 diabetes?")
     print("\n" + "="*80)
     print("RESULT")
     print("="*80)
