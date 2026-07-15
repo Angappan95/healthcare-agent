@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Literal
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from src.agents.base_agent import BaseAgent, AgentExecutionError
 from src.config import MAX_AGENT_ITERATIONS, ENABLE_PARALLEL_AGENTS
+from src.prompts.prompt import get_query_routing_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -130,31 +131,9 @@ class SupervisorAgent(BaseAgent):
         try:
             llm = self._get_llm()
             
-            prompt = f"""You are a medical information routing assistant. Analyze the user's query and decide which information source(s) to use.
 
-Available agents:
-1. **pubmed_agent**: Searches peer-reviewed medical literature (PubMed database)
-   - Best for: Clinical trials, research studies, medical mechanisms, scientific evidence
-   
-2. **websearch_agent**: Searches general health websites (CDC, Mayo Clinic, NIH, WebMD)
-   - Best for: General health info, symptoms, treatments, drug information, patient guidelines
-   
-3. **both_agents**: Use both sources for comprehensive information
-   - Best for: Complex topics needing both research evidence and practical information
-
-Previous Conversation:
-{conversation_context}
-
-Current User Query: "{user_query}"
-
-Note: If this is a follow-up question, consider the conversation context. If the user is asking for clarification or more details about a previous topic, you may be able to use the same routing as before.
-
-Analyze this query and choose ONE of these routing decisions:
-- "pubmed_agent" - if query needs peer-reviewed research
-- "websearch_agent" - if query needs general health information
-- "both_agents" - if query would benefit from both sources
-
-Respond with ONLY the routing decision (one of the three options above), nothing else."""
+            # Use centralized prompt
+            prompt = get_query_routing_prompt(user_query, conversation_context)
 
             self.logger.debug("Analyzing query for routing...")
             message = llm.invoke(prompt)

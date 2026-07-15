@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
 from src.agents.base_agent import BaseAgent, AgentExecutionError
 from src.config import SOURCE_CREDIBILITY, ARTICLE_CHAR_LIMIT
+from src.prompts.prompt import get_synthesis_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -172,30 +173,14 @@ class SynthesisAgent(BaseAgent):
         
         combined_content = '\n\n'.join(content_sections)
         
-        # Create synthesis prompt
-        prompt = f"""You are a medical information synthesis assistant. Based on the user's query and information from multiple sources, provide a comprehensive, evidence-based response.
 
-Previous Conversation Context:
-{conversation_context}
-
-Current User Query: {user_query}
-
-Note: If this is a follow-up question referencing previous discussion, acknowledge the context and build upon it.
-
-Information Sources ({sources_str}):
-
-{combined_content}
-
-Your response should:
-1. Directly answer the user's query (considering any follow-up context)
-2. Synthesize information from all sources
-3. Prioritize peer-reviewed (PubMed) sources over web sources when they conflict
-4. Cite specific sources (e.g., "According to PubMed article by Smith et al..." or "Mayo Clinic reports...")
-5. Highlight key findings and consensus across sources
-6. Note any conflicts or disagreements between sources
-7. Be clear, concise, and evidence-based
-
-Important: This is for informational purposes only and not medical advice."""
+        # Use centralized prompt
+        prompt = get_synthesis_prompt(
+            user_query=user_query,
+            conversation_context=conversation_context,
+            sources_str=sources_str,
+            combined_content=combined_content
+        )
 
         try:
             self.logger.info("Generating synthesized response with LLM...")

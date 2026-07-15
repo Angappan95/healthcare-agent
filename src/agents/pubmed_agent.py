@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from src.agents.base_agent import BaseAgent, AgentExecutionError
 from src.utils.pubmed_utils import search_articles, extract_pubmed_articles_as_markdown
 from src.config import ARTICLE_CHAR_LIMIT
+from src.prompts.prompt import get_keyword_extraction_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -67,16 +68,9 @@ class PubMedAgent(BaseAgent):
         try:
             llm = self._get_llm()
             
-            prompt = f"""Extract the 1-2 MOST relevant medical and scientific keywords from the following query for searching PubMed.
 
-Focus on the core medical concept(s):
-- Primary medical condition, disease, or symptom
-- Key treatment or drug (if mentioned)
-
-Query: {user_query}
-
-Return ONLY 1 or 2 keywords maximum, comma-separated, without any explanation or additional text.
-Example: "diabetes, metformin" or "COVID-19" """
+            # Use centralized prompt
+            prompt = get_keyword_extraction_prompt(user_query)
 
             self.logger.debug("Extracting keywords using LLM...")
             message = llm.invoke(prompt)
