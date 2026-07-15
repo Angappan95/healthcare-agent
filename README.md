@@ -7,6 +7,18 @@ A production-ready healthcare information retrieval system using **LangGraph dis
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     User / Client                            │
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  User / Browser                              │
+│                 http://localhost:8501                        │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│            Streamlit Chat UI (Port 8501)                     │
+│  - Interactive chat interface                                │
+│  - Conversation history                                      │
+│  - Response metadata display                                 │
 └─────────────────────┬───────────────────────────────────────┘
                       │ HTTP REST API
                       ▼
@@ -32,6 +44,12 @@ A production-ready healthcare information retrieval system using **LangGraph dis
 ```
 
 ### Key Components
+
+0. **Streamlit Chat UI** (Port 8501) 💬
+   - User-friendly chat interface
+   - Real-time conversation with the healthcare agent
+   - Displays sources, execution time, and metadata
+   - Dockerized and auto-starts with `./start-services.sh`
 
 1. **Supervisor Agent** (Port 8000)
    - FastAPI REST API for external clients
@@ -90,12 +108,12 @@ EOF
 # Make scripts executable
 chmod +x start-services.sh stop-services.sh
 
-# Build and start all 4 services
+# Build and start all 5 services (including Streamlit UI)
 ./start-services.sh
 ```
 
 **What happens:**
-1. Builds Docker images for all services
+1. Builds Docker images for all 5 services
 2. Starts containers in dependency order
 3. Runs health checks for each service
 4. Displays service URLs
@@ -104,7 +122,8 @@ chmod +x start-services.sh stop-services.sh
 ```
 ✅ All services are running!
 
-Service URLs:
+Service Endpoints:
+- 🖥️  Streamlit UI: http://localhost:8501 (Chat Interface)
 - Supervisor API: http://localhost:8000
 - Supervisor Docs: http://localhost:8000/docs
 - PubMed Agent: http://localhost:8001
@@ -129,6 +148,98 @@ curl -X POST http://localhost:8000/query \
 **Option 3: Interactive API Docs**
 ```bash
 open http://localhost:8000/docs
+```
+
+**Option 4: Streamlit Chat UI** ⭐ (Included in Docker Compose)
+
+The chat interface is automatically started with all services!
+
+```bash
+# Already running if you used ./start-services.sh
+# Access at: http://localhost:8501
+open http://localhost:8501
+```
+
+**For local development (without Docker):**
+```bash
+# Option A: Use main.py
+python main.py
+
+# Option B: Use run-ui.sh
+./run-ui.sh
+
+# Option C: Run directly
+streamlit run src/streamlit_app.py
+```
+
+The Streamlit UI provides:
+- 💬 Interactive chat interface
+- 📜 Conversation history tracking
+- 🔍 Source attribution display
+- ⏱️ Execution time metrics
+- 🔄 Connection status monitoring
+- 🗑️ Clear chat functionality
+
+Access at: http://localhost:8501
+
+### Stop Services
+
+```bash
+./stop-services.sh
+```
+
+## 💬 Using the Streamlit Chat UI
+
+### Features
+- 💬 Interactive chat interface with message history
+- 🔍 Source attribution (PubMed, WebSearch, Synthesis)
+- ⏱️ Execution time metrics for each query
+- 📊 Real-time API health monitoring
+- 🗑️ Clear chat to start new conversation
+- 🔄 Auto-reconnection status
+
+### Example Queries
+- "What are the symptoms of diabetes?"
+- "What are the latest treatments for COVID-19?"
+- "How is hypertension treated?"
+- "What causes Alzheimer's disease?"
+- "What are the benefits of the Mediterranean diet?"
+
+### UI Configuration
+
+**Environment Variables:**
+- `SUPERVISOR_API_URL` - API endpoint (default: `http://localhost:8000` for local, `http://supervisor:8000` in Docker)
+
+**Streamlit Config** (`.streamlit/config.toml`):
+```toml
+[server]
+port = 8501
+address = "0.0.0.0"  # Bind to all interfaces in Docker
+headless = true      # Run without browser in Docker
+
+[theme]
+primaryColor = "#1f77b4"
+```
+
+### Troubleshooting UI
+
+**"API Disconnected" Error:**
+1. Ensure backend services are running: `./start-services.sh`
+2. Check supervisor health: `curl http://localhost:8000/health`
+3. Click "🔄 Check Connection" in sidebar
+
+**Request Timeout:**
+- Queries can take 30-60 seconds for complex questions
+- Check service logs: `docker-compose logs -f`
+- Verify all agents are healthy
+
+**Port Already in Use:**
+```bash
+# Find what's using port 8501
+lsof -i :8501
+# Change port in docker-compose.yml if needed
+ports:
+  - "8502:8501"
 ```
 
 ### Stop Services
@@ -232,16 +343,39 @@ healthcare-agent/
 │   │   └── prompt.py                # Centralized prompts
 │   ├── utils/
 │   │   └── pubmed_utils.py          # PubMed API utilities
+│   ├── streamlit_app.py             # Streamlit Chat UI
 │   └── supervisor_api.py            # FastAPI supervisor service
 ├── test/                            # ⚠️ Needs migration
 ├── examples/                        # Example usage scripts
-├── docker-compose.yml               # Service orchestration
+├── .streamlit/                      # Streamlit configuration
+├── docker-compose.yml               # Service orchestration (5 services)
 ├── Dockerfile.*                     # Individual service Dockerfiles
-├── test_api.py                      # API test client
+├── main.py                          # Entry point to run Streamlit UI
 ├── start-services.sh                # Start all services
 ├── stop-services.sh                 # Stop all services
 └── README.md                        # This file
 ```
+
+### Docker Architecture
+
+All services run in isolated containers on the `healthcare-agent-network`:
+
+``` (Docker Auto-Configured):**
+- `SUPERVISOR_API_URL` - Streamlit → Supervisor (default: `http://supervisor:8000` in Docker)
+- `PUBMED_SERVICE_URL` - Default: `http://pubmed-agent:8001`
+- `WEBSEARCH_SERVICE_URL` - Default: `http://websearch-agent:8002`
+- `SYNTHESIS_SERVICE_URL` - Default: `http://synthesis-agent:8003`
+
+**Local Development (Outside Docker):**
+All URLs default to `localhost` equivalents when environment variables are not set.
+    ↓ depends_on: [pubmed, websearch, synthesis] (healthy)
+pubmed-agent (8001) | websearch-agent (8002) | synthesis-agent (8003)
+```
+
+**Service Communication:**
+- Docker containers use service names: `http://supervisor:8000`
+- Host machine uses localhost: `http://localhost:8000`
+- Environment variables configure URLs automatically
 
 ### Environment Variables
 
@@ -348,28 +482,47 @@ curl http://localhost:8001/health   # PubMed (if health endpoint exists)
 docker-compose restart pubmed-agent
 ```
 
-## 🎯 Quick Commands Reference
-
-### Docker Operations
-```bash
-./start-services.sh              # Start all services
+## 🎯 Quick Commands Reference5 services (includes UI)
 ./stop-services.sh               # Stop and remove containers
 docker-compose up -d             # Start in detached mode
 docker-compose down              # Stop services
 docker-compose logs -f           # Follow all logs
+docker-compose logs streamlit-ui # View UI logs only
 docker-compose restart supervisor # Restart one service
 docker-compose ps                # List running services
+docker-compose build --no-cache  # Rebuild from scratch
+```
+
+### Local Development (UI)
+```bash
+python main.py                   # Launch Streamlit UI locally
+./run-ui.sh                      # Alternative launcher
+streamlit run src/streamlit_app.py  # Direct Streamlit command
 ```
 
 ### Testing
 ```bash
-python test_api.py "your query"  # Test with Python client
-curl -X POST http://localhost:8000/query -H "Content-Type: application/json" -d '{"query": "test"}'
-open http://localhost:8000/docs  # Interactive API docs
+# Via Streamlit UI (recommended)
+open http://localhost:8501
+
+# Via Python test client
+python test_api.py "your query"
+
+# Via cURL
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "test"}'
+
+# Interactive API docs
+open http://localhost:8000/docs
 ```
 
 ### Development
 ```bash
+uv pip install -e .              # Install in editable mode
+uv run python main.py            # Run with uv
+docker-compose up --build        # Rebuild and start
+docker-compose exec supervisor bash  # Shell into container
 uv pip install -e .              # Install in editable mode
 uv run python test_api.py        # Run with uv
 docker-compose build             # Rebuild images
@@ -415,34 +568,79 @@ Submit a healthcare query to the system.
 ### GET /health
 
 Check supervisor service health.
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2026-07-15T10:30:00Z"
-}
-```
-
-## 🔐 Security & Privacy
-
-- ⚠️ **Not for Clinical Use**: This is a research/educational tool
-- 🔒 **No PHI Storage**: No personal health information is stored
-- 🌐 **API Keys**: Store in `.env`, never commit to version control
-- 📋 **Disclaimers**: All responses include medical disclaimers
-
-## 🐛 Troubleshooting
-
-### Services won't start
-```bash
-# Check Docker is running
-docker ps
-
-# Check ports are available
-lsof -i :8000 -i :8001 -i :8002 -i :8003
+ (8000-8003, 8501)
+lsof -i :8000 -i :8001 -i :8002 -i :8003 -i :8501
 
 # View error logs
 docker-compose logs
+
+# Rebuild from scratch
+docker-compose down
+docker-compose build --no-cache
+./start-services.sh
+```
+
+### Streamlit UI Issues
+
+**Cannot connect to API:**
+- Ensure all services are running: `./start-services.sh`
+- Check supervisor health: `curl http://localhost:8000/health`
+- Click "🔄 Check Connection" in UI sidebar
+- View logs: `docker-compose logs streamlit-ui supervisor`
+
+**Request timeouts:**
+- Healthcare queries can take 30-60 seconds
+- Check all agents are healthy: `docker-compose ps`
+- View agent logs: `docker-compose logs pubmed-agent websearch-agent synthesis-agent`
+
+**Port 8501 already in use:**
+```bash
+# Find process using port
+lsof -i :8501
+# Change port in docker-compose.yml
+ports:
+  - "8502:8501"  # Use different host port
+```
+
+### API returns 500 errors
+```bash
+# Check API keys are set
+cat .env | grep API_KEY
+
+# Check supervisor logs
+docker-compose logs supervisor
+
+# Restart services
+./stop-services.sh && ./start-services.sh
+
+# Test supervisor directly
+curl http://localhost:8000/health
+```
+
+### RemoteGraph connection errors
+```bash
+# Verify all agents are healthy
+curl http://localhost:8001/health
+curl http://localhost:8002/health
+curl http://localhost:8003/health
+
+# Check network connectivity
+docker-compose exec supervisor ping pubmed-agent
+docker-compose exec supervisor ping websearch-agent
+
+# Restart affected agent
+docker-compose restart pubmed-agent
+```
+
+### Docker network issues
+```bash
+# Remove and recreate network
+docker-compose down
+docker network prune
+docker-compose up -d
+
+# Check network exists
+docker network ls | grep healthcare-agent-network
 ```
 
 ### API returns 500 errors

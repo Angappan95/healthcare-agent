@@ -1,10 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import logging
 import uuid
 import time
+import re
 from datetime import datetime
 
 from langgraph.prebuilt import create_react_agent
@@ -22,9 +23,15 @@ class QueryRequest(BaseModel):
     query: str = Field(..., min_length=5)
     conversation_id: Optional[str] = None
 
+class SourceDetail(BaseModel):
+    agent: str
+    urls: List[str] = []
+    description: str = ""
+
 class QueryResponse(BaseModel):
     response: str
-    sources_used: list[str]
+    sources_used: list[str]  # Keep for backward compatibility
+    source_details: List[SourceDetail] = []  # Enhanced source information
     conversation_id: str
     request_id: str
     timestamp: str
@@ -53,6 +60,11 @@ supervisor_agent = create_react_agent(
 async def health_check():
     return {"status": "healthy", "service": "supervisor"}
 
+def extract_urls(text: str) -> List[str]:
+    """Extract URLs from text."""
+    url_pattern = r'https?://[^\s<>"\)\]]+'
+    return re.findall(url_pattern, text)
+
 @app.post("/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
     start = time.time()
@@ -63,6 +75,7 @@ async def process_query(request: QueryRequest):
 
         result = None
         sources_used = []
+        source_details: Dict[str, SourceDetail] = {}
         
         for event in supervisor_agent.stream(
             {"messages": [system_message, ("user", request.query)]},
@@ -82,26 +95,61 @@ async def process_query(request: QueryRequest):
                     else:
                         result = str(content)
             
-            # Track which tools were called
+            # Track which tools were called and collect their responses
             if "tools" in event:
-                for tool_call in event.get("tools", {}).get("messages", []):
-                    if hasattr(tool_call, 'name'):
-                        if 'pubmed' in tool_call.name.lower():
+                for tool_msg in event.get("tools", {}).get("messages", []):
+                    if hasattr(tool_msg, 'name'):
+                        tool_name = tool_msg.name
+                        tool_content = str(tool_msg.content) if hasattr(tool_msg, 'content') else ""
+                        
+                        # Extract URLs from tool response
+                        urls = extract_urls(tool_content)
+                        
+                        if 'pubmed' in tool_name.lower():
+                            agent_name = "PubMed Agent"
                             sources_used.append("PubMed")
-                        elif 'websearch' in tool_call.name.lower():
+                            if agent_name not in source_details:
+                                source_details[agent_name] = SourceDetail(
+                                    agent=agent_name,
+                                    urls=[],
+                                    description="Scientific literature from NCBI PubMed"
+                                )
+                            source_details[agent_name].urls.extend(urls)
+                            
+                        elif 'websearch' in tool_name.lower() or 'web' in tool_name.lower():
+                            agent_name = "WebSearch Agent"
                             sources_used.append("WebSearch")
-                        elif 'synthesis' in tool_call.name.lower():
+                            if agent_name not in source_details:
+                                source_details[agent_name] = SourceDetail(
+                                    agent=agent_name,
+                                    urls=[],
+                                    description="Credible health sources (CDC, NIH, Mayo Clinic)"
+                                )
+                            source_details[agent_name].urls.extend(urls)
+                            
+                        elif 'synthesis' in tool_name.lower():
+                            agent_name = "Synthesis Agent"
                             sources_used.append("Synthesis")
+                            if agent_name not in source_details:
+                                source_details[agent_name] = SourceDetail(
+                                    agent=agent_name,
+                                    urls=[],
+                                    description="Multi-source information synthesis"
+                                )
+                            source_details[agent_name].urls.extend(urls)
         
         if not result:
             raise Exception("Agent did not produce a response")
         
-        # Deduplicate sources
+        # Deduplicate sources and URLs
         sources_used = list(dict.fromkeys(sources_used)) or ["AI Assistant"]
+        for detail in source_details.values():
+            detail.urls = list(dict.fromkeys(detail.urls))  # Remove duplicate URLs
         
         return QueryResponse(
             response=result,
             sources_used=sources_used,
+            source_details=list(source_details.values()),
             conversation_id=conversation_id,
             request_id=request_id,
             timestamp=datetime.utcnow().isoformat(),

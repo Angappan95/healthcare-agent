@@ -1,21 +1,30 @@
 import os
 from typing import Dict, Any, Optional
 from langchain_core.tools import tool
-from langgraph.pregel.remote import RemoteGraph
+import httpx
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Initialize RemoteGraphs for each agent
-pubmed_graph = RemoteGraph("pubmed_agent", url=os.getenv("PUBMED_SERVICE_URL", "http://localhost:8001"))
-websearch_graph = RemoteGraph("websearch_agent", url=os.getenv("WEBSEARCH_SERVICE_URL", "http://localhost:8002"))
-synthesis_graph = RemoteGraph("synthesis_agent", url=os.getenv("SYNTHESIS_SERVICE_URL", "http://localhost:8003"))
+# Service URLs with fallback to localhost
+PUBMED_SERVICE_URL = os.getenv("PUBMED_SERVICE_URL", "http://localhost:8001")
+WEBSEARCH_SERVICE_URL = os.getenv("WEBSEARCH_SERVICE_URL", "http://localhost:8002")
+SYNTHESIS_SERVICE_URL = os.getenv("SYNTHESIS_SERVICE_URL", "http://localhost:8003")
+
+# HTTP client with timeout
+http_client = httpx.Client(timeout=30.0)
 
 @tool
 def search_pubmed_literature(query: str) -> Dict[str, Any]:
     """Search peer-reviewed medical literature. Use for scientific evidence, clinical trials, research studies."""
     try:
-        result = pubmed_graph.invoke({"query": query})
+        response = http_client.post(
+            f"{PUBMED_SERVICE_URL}/invoke",
+            json={"query": query}
+        )
+        response.raise_for_status()
+        result = response.json()
+        
         return {
             "status": "success",
             "agent": "pubmed_agent",
@@ -34,7 +43,13 @@ def search_pubmed_literature(query: str) -> Dict[str, Any]:
 def search_web_sources(query: str) -> Dict[str, Any]:
     """Search credible health websites (CDC, NIH, Mayo Clinic). Use for symptoms, treatments, patient guidelines."""
     try:
-        result = websearch_graph.invoke({"query": query})
+        response = http_client.post(
+            f"{WEBSEARCH_SERVICE_URL}/invoke",
+            json={"query": query}
+        )
+        response.raise_for_status()
+        result = response.json()
+        
         return {
             "status": "success",
             "agent": "websearch_agent",
@@ -59,7 +74,13 @@ def synthesize_information(query: str, pubmed_results: Optional[Dict] = None,
         if websearch_results:
             context['websearch_results'] = websearch_results
         
-        result = synthesis_graph.invoke({"query": query, "context": context})
+        response = http_client.post(
+            f"{SYNTHESIS_SERVICE_URL}/invoke",
+            json={"query": query, "context": context}
+        )
+        response.raise_for_status()
+        result = response.json()
+        
         return {
             "status": "success",
             "agent": "synthesis_agent",

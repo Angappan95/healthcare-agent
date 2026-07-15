@@ -1,31 +1,52 @@
 """
 Healthcare Agent - Distributed Multi-Agent System
 
-NOTE: This project now uses a distributed microservices architecture.
-To run the system:
+Main entry point for running the Streamlit UI locally.
 
-1. Start all services:
+For production deployment, use docker-compose:
    ./start-services.sh
 
-2. Test with the API client:
-   python test_api.py "What are the latest treatments for COVID-19?"
-
-3. Or call the API directly:
-   curl -X POST http://localhost:8000/query \
-        -H "Content-Type: application/json" \
-        -d '{"query": "What are the symptoms of diabetes?"}'
-
-The old monolithic workflow has been removed in favor of:
-- LangGraph-based agents (src/agents/agent_graphs.py)
-- Distributed deployment (docker-compose.yml)
-- RemoteGraph communication (src/agents/supervisor_tools.py)
-- REST API (src/supervisor_api.py)
+For local development UI:
+   python main.py
+   # or
+   streamlit run src/streamlit_app.py
 """
 
-if __name__ == "__main__":
-    print(__doc__)
-    print("\n" + "="*80)
-    print("⚠️  This is now a distributed system.")
-    print("   Use ./start-services.sh to launch all services.")
-    print("   Use test_api.py to interact with the system.")
+import sys
+import os
+import subprocess
+
+def main():
+    """Run the Streamlit UI application."""
+    print("🏥 Starting Healthcare Agent Chat UI...")
     print("="*80)
+    print("📍 UI will be available at: http://localhost:8501")
+    print("📡 Connecting to API at:", os.getenv("SUPERVISOR_API_URL", "http://localhost:8000"))
+    print("="*80)
+    print("\n⚠️  Note: Make sure backend services are running:")
+    print("   • Run: ./start-services.sh")
+    print("   • Or ensure supervisor API is running on port 8000")
+    print("\n🚀 Launching Streamlit...\n")
+    
+    # Run streamlit from src directory
+    try:
+        subprocess.run([
+            "streamlit", "run", "src/streamlit_app.py",
+            "--server.port", "8501",
+            "--server.address", "localhost"
+        ], check=True)
+    except KeyboardInterrupt:
+        print("\n\n👋 Shutting down gracefully...")
+        sys.exit(0)
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ Error running Streamlit: {e}")
+        sys.exit(1)
+    except FileNotFoundError:
+        print("\n❌ Streamlit not found. Please install:")
+        print("   pip install streamlit")
+        print("   # or")
+        print("   uv pip install streamlit")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
