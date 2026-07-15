@@ -25,3 +25,29 @@ class SupervisorState(TypedDict):
     response: str
 
 WorkflowState = SupervisorState
+
+# Agent-specific state definitions
+class PubMedState(TypedDict):
+    """State for PubMed agent graph."""
+    query: str
+    keywords: List[str]
+    pmids: List[str]
+    article_markdown: str
+    error: Optional[str]
+
+class WebSearchState(TypedDict):
+    """State for WebSearch agent graph."""
+    query: str
+    search_results: List[Dict]
+    credible_results: List[Dict]
+    web_search_markdown: str
+    error: Optional[str]
+
+class SynthesisState(TypedDict):
+    """State for Synthesis agent graph."""
+    query: str
+    context: Dict[str, Any]
+    combined_content: str
+    response: str
+    sources_used: List[str]
+    error: Optional[str]

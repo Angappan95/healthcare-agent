@@ -1,19 +1,24 @@
 """
-Agent module exports.
+Agent module exports for distributed multi-agent architecture.
 """
 
-from .base_agent import BaseAgent, AgentExecutionError, AgentTimeoutError
-from .supervisor_agent import SupervisorAgent
-from .pubmed_agent import PubMedAgent
-from .websearch_agent import WebSearchAgent
-from .synthesis_agent import SynthesisAgent
+from .agent_graphs import (
+    create_pubmed_graph,
+    create_websearch_graph,
+    create_synthesis_graph
+)
+
+from .supervisor_tools import (
+    search_pubmed_literature,
+    search_web_sources,
+    synthesize_information
+)
 
 __all__ = [
-    'BaseAgent',
-    'AgentExecutionError',
-    'AgentTimeoutError',
-    'SupervisorAgent',
-    'PubMedAgent',
-    'WebSearchAgent',
-    'SynthesisAgent'
+    'create_pubmed_graph',
+    'create_websearch_graph',
+    'create_synthesis_graph',
+    'search_pubmed_literature',
+    'search_web_sources',
+    'synthesize_information'
 ]

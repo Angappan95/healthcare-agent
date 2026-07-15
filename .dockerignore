@@ -1,0 +1,65 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+dist
+build
+.eggs
+.pytest_cache
+.coverage
+htmlcov
+*.log
+
+# Virtual environments
+venv
+.venv
+env
+.env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Documentation (not needed in container)
+*.md
+docs/
+examples/
+ARCHITECTURE.md
+README.md
+DEPLOYMENT_GUIDE.md
+PROJECT_EVALUATION.md
+AGENT_RUN_REPORT.md
+
+# Test files (build separately if needed)
+test/
+tests/
+*.test.py
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+.langgraph_checkpoints
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Scripts
+*.sh
+
+# Misc
+.DS_Store
+healthcare_agent.egg-info/

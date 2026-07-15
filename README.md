@@ -1,268 +1,507 @@
-# Healthcare Agent - Multi-Agent Orchestration System
+# Healthcare Agent - Distributed Multi-Agent System
 
-A sophisticated healthcare information retrieval system using **LangGraph supervisor pattern** to intelligently coordinate between PubMed literature search and web search, providing comprehensive, evidence-based responses with source attribution.
-
-## 🌟 Features
-
-### Multi-Agent Coordination
-- **Supervisor Agent:** LLM-based intelligent routing that analyzes query intent
-- **PubMed Agent:** Searches peer-reviewed medical literature from NCBI PubMed
-- **WebSearch Agent:** Searches credible health websites via Tavily API (CDC, NIH, Mayo Clinic, etc.)
-- **Synthesis Agent:** Merges multi-source information with credibility-weighted conflict resolution
-
-### Advanced Capabilities
-- **Intelligent Routing:** Automatically determines which agent(s) to invoke based on query type
-- **Graceful Degradation:** Returns partial results if one agent fails
-- **Circuit Breaker Pattern:** Prevents cascading failures with automatic recovery
-- **Conversation History:** SQLite checkpointing for multi-turn conversations
-- **Source Attribution:** Every response includes citations and credibility scores
-- **Backward Compatible:** Legacy linear workflow still supported
-
-### Resilience & Quality
-- Retry logic with exponential backoff (2 retries)
-- Error handling without workflow failure
-- Credibility scoring (PubMed: 1.0, Credible Web: 0.8, General Web: 0.5)
-- Medical disclaimers on all responses
-- No PHI (Personal Health Information) storage
+A production-ready healthcare information retrieval system using **LangGraph distributed multi-agent architecture** with RemoteGraph communication. Each agent runs as an independent microservice with Docker deployment.
 
 ## 🏗️ Architecture
 
 ```
-User Query
-    ↓
-Supervisor Agent (LLM analyzes intent)
-    ↓
-┌─────────────────────┬─────────────────────┐
-↓                     ↓                     ↓
-PubMed Agent    WebSearch Agent    Both (sequential)
-(Peer-reviewed)  (Credible sources)
-    ↓                     ↓                     ↓
-    └─────────────────────┴─────────────────────┘
-                    ↓
-            Synthesis Agent
-        (Merge + Cite + Resolve conflicts)
-                    ↓
-            Final Response
+┌─────────────────────────────────────────────────────────────┐
+│                     User / Client                            │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ HTTP REST API
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│         Supervisor Agent (FastAPI + LangGraph ReAct)        │
+│                        Port 8000                             │
+│  - Analyzes query intent                                     │
+│  - Uses RemoteGraph to call sub-agents                       │
+│  - Orchestrates multi-agent workflow                         │
+└─────────┬──────────────┬──────────────┬─────────────────────┘
+          │              │              │
+          │ RemoteGraph  │ RemoteGraph  │ RemoteGraph
+          ▼              ▼              ▼
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│   PubMed    │  │  WebSearch  │  │  Synthesis  │
+│   Agent     │  │   Agent     │  │   Agent     │
+│  Port 8001  │  │  Port 8002  │  │  Port 8003  │
+│             │  │             │  │             │
+│ LangGraph   │  │ LangGraph   │  │ LangGraph   │
+│ StateGraph  │  │ StateGraph  │  │ StateGraph  │
+│ + Server    │  │ + Server    │  │ + Server    │
+└─────────────┘  └─────────────┘  └─────────────┘
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for comprehensive technical documentation.
+### Key Components
+
+1. **Supervisor Agent** (Port 8000)
+   - FastAPI REST API for external clients
+   - LangGraph ReAct agent for intelligent orchestration
+   - RemoteGraph tools to communicate with sub-agents
+   - Multi-turn conversation support
+
+2. **PubMed Agent** (Port 8001)
+   - LangGraph StateGraph: `extract_keywords → search_pubmed → extract_articles`
+   - Searches peer-reviewed medical literature (NCBI PubMed)
+   - Exposed via LangGraphServer
+
+3. **WebSearch Agent** (Port 8002)
+   - LangGraph StateGraph: `search_web → filter_credible → format_markdown`
+   - Searches credible health sources (CDC, NIH, Mayo Clinic) via Tavily
+   - Exposed via LangGraphServer
+
+4. **Synthesis Agent** (Port 8003)
+   - LangGraph StateGraph: `collate_content → synthesize`
+   - Merges multi-source information with citations
+   - LLM-based synthesis with conflict resolution
+   - Exposed via LangGraphServer
+
+### LangGraph Features
+
+✅ **Native StateGraph**: Each agent is a proper LangGraph graph with type-safe state  
+✅ **RemoteGraph**: Distributed graph communication (no manual HTTP)  
+✅ **Checkpointing**: SqliteSaver for conversation history (upgradeable to Redis)  
+✅ **Streaming**: Built-in support for streaming responses  
+✅ **Type Safety**: TypedDict states ensure correct data flow  
 
 ## 🚀 Quick Start
 
-### Installation
+### Prerequisites
 
-1. **Clone and setup:**
-   ```bash
-   git clone <repo-url>
-   cd healthcare-agent
-   ```
-
-2. **Create virtual environment:**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies:**
-   ```bash
-   pip install -e .
-   ```
-
-### Configuration
-
-Set required API keys:
 ```bash
-# Required for LLM (choose one)
-export GOOGLE_API_KEY="AIza-xxxxx"      # Gemini
+# 1. Verify Docker installation
+docker --version
+docker-compose --version
+
+# 2. Set up environment variables
+cat > .env << EOF
+# Required: At least one LLM API key
+GEMINI_API_KEY=your_gemini_api_key_here
 # OR
-export OPENAI_API_KEY="sk-xxxxx"        # OpenAI
+OPENAI_API_KEY=your_openai_api_key_here
 
-# Required for WebSearch Agent
-export TAVILY_API_KEY="tvly-xxxxx"      # Get from https://tavily.com
+# Required: For web search
+TAVILY_API_KEY=your_tavily_api_key_here
+EOF
 ```
 
-### Usage
+### Start All Services
 
-```python
-from src.workflow import run_workflow
+```bash
+# Make scripts executable
+chmod +x start-services.sh stop-services.sh
 
-# Simple query
-result = run_workflow("What are treatments for type 2 diabetes?")
-print(result['response'])
+# Build and start all 4 services
+./start-services.sh
 ```
 
-### Multi-Turn Conversations
+**What happens:**
+1. Builds Docker images for all services
+2. Starts containers in dependency order
+3. Runs health checks for each service
+4. Displays service URLs
 
-The system uses **LangGraph's built-in message handling** with `add_messages` reducer and `SummarizationMiddleware` to maintain conversation context across multiple queries:
+**Expected output:**
+```
+✅ All services are running!
 
-```python
-from src.workflow import run_workflow, get_conversation_turns, print_conversation_history
-
-# Use the same thread_id to maintain context across turns
-thread_id = "user-session-123"
-
-# Turn 1: Initial question
-result1 = run_workflow(
-    user_query="What are the main treatments for type 2 diabetes?",
-    thread_id=thread_id
-)
-
-# Turn 2: Follow-up question (system remembers previous context)
-result2 = run_workflow(
-    user_query="What are the side effects of those medications?",  # References previous turn
-    thread_id=thread_id
-)
-
-# Turn 3: Another follow-up
-result3 = run_workflow(
-    user_query="Are there lifestyle changes that can help?",
-    thread_id=thread_id
-)
-
-# Access conversation history from messages
-from langchain_core.messages import HumanMessage, AIMessage
-
-messages = result3['messages']
-for msg in messages:
-    if isinstance(msg, HumanMessage):
-        print(f"User: {msg.content}")
-    elif isinstance(msg, AIMessage):
-        print(f"Assistant: {msg.content}")
-        print(f"Sources: {msg.additional_kwargs.get('sources_used', {})}")
-
-# Or use helper functions
-turns = get_conversation_turns(result3)
-print_conversation_history(result3)
+Service URLs:
+- Supervisor API: http://localhost:8000
+- Supervisor Docs: http://localhost:8000/docs
+- PubMed Agent: http://localhost:8001
+- WebSearch Agent: http://localhost:8002
+- Synthesis Agent: http://localhost:8003
 ```
 
-**Key Features:**
-- **`add_messages` reducer**: Automatically appends new messages to conversation
-- **BaseMessage types**: Uses LangChain's `HumanMessage` and `AIMessage` for proper typing
-- **SummarizationMiddleware**: Automatically summarizes old messages when tokens exceed 2000
-  - Token-based trigger prevents context window overflow
-  - Keeps last 2 messages (1 turn) intact while summarizing older context
-  - Efficient memory management for long consultations
-- **Metadata support**: AI responses include `sources_used` in `additional_kwargs`
-- **Persistence**: History persisted via SQLite checkpointing (survives restarts)
+### Test the System
 
-See [`examples/multi_turn_conversation.py`](examples/multi_turn_conversation.py) for a complete demo.
+**Option 1: Python Test Client**
+```bash
+python test_api.py "What are the symptoms of diabetes?"
+```
 
-## 📊 How Routing Works
+**Option 2: cURL**
+```bash
+curl -X POST http://localhost:8000/query \
+     -H "Content-Type: application/json" \
+     -d '{"query": "What is hypertension and how is it treated?"}'
+```
 
-The Supervisor Agent uses LLM to analyze queries and route intelligently:
+**Option 3: Interactive API Docs**
+```bash
+open http://localhost:8000/docs
+```
 
-| Query Type | Example | Routing Decision |
-|------------|---------|------------------|
-| **Research/Clinical** | "What do clinical trials show about drug X?" | → PubMed Agent |
-| **General Health** | "What are symptoms of diabetes?" | → WebSearch Agent |
-| **Treatment Info** | "How is condition X treated?" | → Both Agents |
-| **Complex Medical** | "Relationship between diabetes and heart disease" | → Both Agents |
+### Stop Services
+
+```bash
+./stop-services.sh
+```
+
+## 📦 Installation (Development)
+
+```bash
+# Clone repository
+git clone <your-repo-url>
+cd healthcare-agent
+
+# Install dependencies with uv (recommended)
+uv pip install -e .
+
+# Or with pip
+pip install -e .
+```
 
 ## 🧪 Testing
 
-Run unit tests:
-```bash
-pytest test/test_supervisor_workflow.py -v
-```
+### Current Test Status
 
-Run all tests:
-```bash
-pytest test/ -v
-```
+⚠️ **Tests in `test/` directory are currently BROKEN** - they import the old monolithic architecture which has been removed.
 
-## 📚 Documentation
+### Test Migration Required
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Comprehensive system design, state flow, agent responsibilities
-- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - What was built, features, usage examples
-- **[SETUP.md](SETUP.md)** - Detailed installation and configuration
-- **[WORKFLOW.md](WORKFLOW.md)** - Original workflow documentation
-- **[CHECKPOINTING_GUIDE.md](CHECKPOINTING_GUIDE.md)** - Conversation history management
-
-## 🎯 Example Queries
+**Option 1: Integration Tests (Recommended)**
+Test via HTTP API:
 
 ```python
-# Research-focused (routes to PubMed)
-run_workflow("What are the mechanisms of metformin in type 2 diabetes?")
+import httpx
+import pytest
 
-# General health (routes to WebSearch)
-run_workflow("What are common flu symptoms and remedies?")
+def test_health_check():
+    response = httpx.get("http://localhost:8000/health")
+    assert response.status_code == 200
 
-# Complex topic (routes to Both)
-run_workflow("What are the latest treatments for COVID-19 long-haul symptoms?")
+def test_query_endpoint():
+    response = httpx.post(
+        "http://localhost:8000/query",
+        json={"query": "What is diabetes?"},
+        timeout=60.0
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "response" in data
+    assert len(data["sources_used"]) > 0
 ```
 
-## 🔧 Configuration Options
-
-Edit `config.py` to customize:
+**Option 2: Unit Tests for Graphs**
 
 ```python
-# Agent Behavior
-MAX_AGENT_ITERATIONS = 5          # Prevent infinite loops
-ENABLE_PARALLEL_AGENTS = True     # Allow parallel execution
-AGENT_TIMEOUT = 30                # Seconds per agent
+from src.agents.agent_graphs import create_pubmed_graph
 
-# Search Configuration
-TAVILY_MAX_RESULTS = 5            # Web search results
-ARTICLE_CHAR_LIMIT = 500          # Chars per article in prompts
-
-# Retry & Resilience
-MAX_RETRIES = 2                   # Retry attempts
-RETRY_BACKOFF_FACTOR = 2          # Exponential backoff
+def test_pubmed_graph():
+    graph = create_pubmed_graph()
+    result = graph.invoke({"query": "diabetes treatment"})
+    
+    assert "keywords" in result
+    assert "pmids" in result
+    assert "article_markdown" in result
 ```
 
-## 📈 Performance
+**Option 3: Mock RemoteGraph**
 
-| Metric | Sequential | Parallel |
-|--------|-----------|----------|
-| **PubMed only** | 4-6s | - |
-| **WebSearch only** | 3-5s | - |
-| **Both agents** | 8-12s | 5-9s (planned) |
+```python
+from unittest.mock import patch
+from src.agents.supervisor_tools import search_pubmed_literature
 
-## 🚧 Known Limitations
+def test_search_pubmed_tool():
+    with patch('src.agents.supervisor_tools.pubmed_graph') as mock_graph:
+        mock_graph.invoke.return_value = {
+            "keywords": ["test"],
+            "article_markdown": "Test article"
+        }
+        
+        result = search_pubmed_literature("diabetes")
+        assert result["status"] == "success"
+```
 
-1. **Parallel execution** currently sequential (LangGraph limitation)
-2. **No query caching** (repeated queries hit APIs)
-3. **SQLite checkpointing** may need PostgreSQL for production scale
+## 🔧 Development Guide
 
-## 🛠️ Troubleshooting
+### Project Structure
 
-### "Tavily API key not configured"
+```
+healthcare-agent/
+├── src/
+│   ├── agents/
+│   │   ├── agent_graphs.py          # LangGraph StateGraph definitions
+│   │   ├── pubmed_service.py        # PubMed LangGraphServer
+│   │   ├── websearch_service.py     # WebSearch LangGraphServer
+│   │   ├── synthesis_service.py     # Synthesis LangGraphServer
+│   │   └── supervisor_tools.py      # RemoteGraph tools
+│   ├── models/
+│   │   └── state.py                 # State type definitions
+│   ├── prompts/
+│   │   └── prompt.py                # Centralized prompts
+│   ├── utils/
+│   │   └── pubmed_utils.py          # PubMed API utilities
+│   └── supervisor_api.py            # FastAPI supervisor service
+├── test/                            # ⚠️ Needs migration
+├── examples/                        # Example usage scripts
+├── docker-compose.yml               # Service orchestration
+├── Dockerfile.*                     # Individual service Dockerfiles
+├── test_api.py                      # API test client
+├── start-services.sh                # Start all services
+├── stop-services.sh                 # Stop all services
+└── README.md                        # This file
+```
+
+### Environment Variables
+
+**Required:**
+- `GEMINI_API_KEY` or `OPENAI_API_KEY` - LLM provider
+- `TAVILY_API_KEY` - Web search provider
+
+**Optional:**
+- `PUBMED_SERVICE_URL` - Default: `http://pubmed-agent:8001`
+- `WEBSEARCH_SERVICE_URL` - Default: `http://websearch-agent:8002`
+- `SYNTHESIS_SERVICE_URL` - Default: `http://synthesis-agent:8003`
+
+### Adding a New Agent
+
+1. **Define the graph** in `src/agents/agent_graphs.py`:
+```python
+from typing import TypedDict
+from langgraph.graph import StateGraph
+
+class MyAgentState(TypedDict):
+    input_field: str
+    output_field: str
+
+def my_node(state: MyAgentState) -> MyAgentState:
+    # Process state
+    return {"output_field": "result"}
+
+def create_my_agent_graph():
+    graph = StateGraph(MyAgentState)
+    graph.add_node("my_node", my_node)
+    graph.set_entry_point("my_node")
+    graph.set_finish_point("my_node")
+    return graph.compile()
+```
+
+2. **Create service file** `src/agents/my_service.py`:
+```python
+from langgraph_server import LangGraphServer
+from src.agents.agent_graphs import create_my_agent_graph
+
+if __name__ == "__main__":
+    graph = create_my_agent_graph()
+    server = LangGraphServer(graph=graph, host="0.0.0.0", port=8004)
+    import uvicorn
+    uvicorn.run(server.app, host="0.0.0.0", port=8004)
+```
+
+3. **Add RemoteGraph tool** in `src/agents/supervisor_tools.py`:
+```python
+from langgraph.pregel.remote import RemoteGraph
+from langchain_core.tools import tool
+
+my_graph = RemoteGraph("my_agent", url=os.getenv("MY_SERVICE_URL", "http://localhost:8004"))
+
+@tool
+def call_my_agent(query: str) -> Dict[str, Any]:
+    """Call my custom agent."""
+    result = my_graph.invoke({"input_field": query})
+    return {"status": "success", "data": result}
+```
+
+4. **Add to Docker Compose** in `docker-compose.yml`:
+```yaml
+my-agent:
+  build:
+    context: .
+    dockerfile: Dockerfile.myagent
+  ports:
+    - "8004:8004"
+  environment:
+    - GEMINI_API_KEY=${GEMINI_API_KEY}
+  networks:
+    - healthcare-agent-network
+```
+
+5. **Create Dockerfile** `Dockerfile.myagent`:
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY pyproject.toml .
+RUN pip install .
+COPY src/ src/
+EXPOSE 8004
+CMD ["python", "-m", "src.agents.my_service"]
+```
+
+### Monitoring & Debugging
+
+**View logs:**
 ```bash
-export TAVILY_API_KEY="your-key-here"
+docker-compose logs -f supervisor    # Supervisor logs
+docker-compose logs -f pubmed-agent  # PubMed agent logs
+docker-compose logs -f              # All services
 ```
 
-### "ModuleNotFoundError: No module named 'langgraph_checkpoint_sqlite'"
+**Check service health:**
 ```bash
-pip install langgraph-checkpoint-sqlite tavily-python
+curl http://localhost:8000/health   # Supervisor
+curl http://localhost:8001/health   # PubMed (if health endpoint exists)
 ```
 
-### "Circuit breaker open"
-Wait 60 seconds for automatic reset, or check agent logs for underlying error.
+**Restart a single service:**
+```bash
+docker-compose restart pubmed-agent
+```
+
+## 🎯 Quick Commands Reference
+
+### Docker Operations
+```bash
+./start-services.sh              # Start all services
+./stop-services.sh               # Stop and remove containers
+docker-compose up -d             # Start in detached mode
+docker-compose down              # Stop services
+docker-compose logs -f           # Follow all logs
+docker-compose restart supervisor # Restart one service
+docker-compose ps                # List running services
+```
+
+### Testing
+```bash
+python test_api.py "your query"  # Test with Python client
+curl -X POST http://localhost:8000/query -H "Content-Type: application/json" -d '{"query": "test"}'
+open http://localhost:8000/docs  # Interactive API docs
+```
+
+### Development
+```bash
+uv pip install -e .              # Install in editable mode
+uv run python test_api.py        # Run with uv
+docker-compose build             # Rebuild images
+docker-compose up --build        # Rebuild and start
+```
+
+## 🌟 Features
+
+- ✅ **True Multi-Agent**: Each agent is an independent microservice
+- ✅ **LangGraph Native**: Uses StateGraph, RemoteGraph, LangGraphServer
+- ✅ **Type-Safe**: TypedDict states for all graphs
+- ✅ **Checkpointing**: Built-in conversation history via SqliteSaver
+- ✅ **Distributed**: Docker-based deployment with service discovery
+- ✅ **Scalable**: Each service can scale independently
+- ✅ **Resilient**: Health checks and dependency management
+- ✅ **RESTful**: Standard HTTP API with OpenAPI docs
+- ✅ **Source Attribution**: All responses include citations
+- ✅ **Medical Disclaimers**: Automatic disclaimer on all responses
+
+## 📝 API Reference
+
+### POST /query
+
+Submit a healthcare query to the system.
+
+**Request:**
+```json
+{
+  "query": "What are the symptoms of diabetes?",
+  "thread_id": "optional-conversation-id"
+}
+```
+
+**Response:**
+```json
+{
+  "response": "Diabetes symptoms include:\n\n1. **Increased thirst**...",
+  "sources_used": ["pubmed", "websearch"],
+  "timestamp": "2026-07-15T10:30:00Z"
+}
+```
+
+### GET /health
+
+Check supervisor service health.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-07-15T10:30:00Z"
+}
+```
+
+## 🔐 Security & Privacy
+
+- ⚠️ **Not for Clinical Use**: This is a research/educational tool
+- 🔒 **No PHI Storage**: No personal health information is stored
+- 🌐 **API Keys**: Store in `.env`, never commit to version control
+- 📋 **Disclaimers**: All responses include medical disclaimers
+
+## 🐛 Troubleshooting
+
+### Services won't start
+```bash
+# Check Docker is running
+docker ps
+
+# Check ports are available
+lsof -i :8000 -i :8001 -i :8002 -i :8003
+
+# View error logs
+docker-compose logs
+```
+
+### API returns 500 errors
+```bash
+# Check API keys are set
+cat .env
+
+# Check supervisor logs
+docker-compose logs supervisor
+
+# Restart services
+./stop-services.sh && ./start-services.sh
+```
+
+### RemoteGraph connection errors
+```bash
+# Verify all agents are healthy
+curl http://localhost:8001/health  # Should return 200
+curl http://localhost:8002/health
+curl http://localhost:8003/health
+
+# Check network connectivity
+docker-compose exec supervisor ping pubmed-agent
+```
+
+## 🚧 Known Issues
+
+- ⚠️ Tests in `test/` directory need migration (see Testing section)
+- 🔄 SQLite checkpointer (`:memory:`) resets on restart - upgrade to Redis for production
+- 📊 No built-in monitoring/metrics yet (TODO: add Prometheus)
+- 🔍 No graph visualization yet (TODO: add LangGraph Studio integration)
+
+## 📚 Additional Resources
+
+- [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
+- [LangGraph RemoteGraph](https://langchain-ai.github.io/langgraph/cloud/concepts/remote_graph/)
+- [PubMed API](https://www.ncbi.nlm.nih.gov/home/develop/api/)
+- [Tavily Search API](https://tavily.com/)
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Ensure tests pass (after migration)
+5. Submit a pull request
 
-## 📝 License
+## 📄 License
 
-This project is for educational purposes.
-
-## ⚠️ Disclaimer
-
-**This system provides health information for educational purposes only and should not be considered medical advice. Always consult with a qualified healthcare professional for medical concerns.**
+[Your License Here]
 
 ## 🙏 Acknowledgments
 
-- **LangGraph** - Multi-agent orchestration framework
-- **NCBI PubMed** - Medical literature database
-- **Tavily** - Web search API
-- **Google Gemini / OpenAI** - Language models
+Built with:
+- [LangGraph](https://github.com/langchain-ai/langgraph) - Multi-agent orchestration
+- [LangChain](https://github.com/langchain-ai/langchain) - LLM framework
+- [FastAPI](https://fastapi.tiangolo.com/) - REST API framework
+- [Docker](https://www.docker.com/) - Containerization
 
 ---
 
-**Version:** 1.0.0  
-**Last Updated:** 2026-07-15
+**Note**: This project has been refactored from a monolithic supervisor pattern to a true distributed multi-agent system using LangGraph's RemoteGraph. All old architecture files have been removed. See git history for migration details.
