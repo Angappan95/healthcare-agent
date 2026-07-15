@@ -16,6 +16,11 @@ PREVIEW_LENGTH = 200
 MAX_RETRIES = 2
 RETRY_BACKOFF_FACTOR = 2  # Exponential backoff: 1s, 2s, 4s
 
+# LLM Configuration
+LLM_REQUEST_TIMEOUT = 30  # Timeout for LLM API requests (seconds)
+LLM_MAX_RETRIES = 3  # Number of retry attempts for LLM API calls
+LLM_RETRY_BACKOFF_FACTOR = 2  # Exponential backoff: 1s, 2s, 4s, 8s
+
 # LLM Prompt Configuration
 ARTICLE_CHAR_LIMIT = 500  # Maximum characters to include per article in LLM prompt
 

@@ -10,18 +10,22 @@ logger = logging.getLogger(__name__)
 def create_pubmed_graph():
     """Create PubMed agent as LangGraph."""
     from src.utils.pubmed_utils import search_articles, extract_pubmed_articles_as_markdown
-    from src.tools.helper import get_llm
+    from src.tools.helper import get_llm, call_llm_with_retry
     from src.prompts.prompt import get_keyword_extraction_prompt
     
     llm = get_llm()
     
     def extract_keywords(state: PubMedState) -> PubMedState:
         try:
-            response = llm.invoke(get_keyword_extraction_prompt(state["query"]))
+            response = call_llm_with_retry(
+                llm, 
+                get_keyword_extraction_prompt(state["query"]),
+                context="for keyword extraction"
+            )
             keywords = [k.strip() for k in response.content.strip().split(',')]
             return {**state, "keywords": keywords}
         except Exception as e:
-            logger.error(f"Keyword extraction failed: {e}")
+            logger.error(f"Keyword extraction failed after retries: {e}")
             return {**state, "keywords": state["query"].split()[:3]}
     
     def search_pubmed(state: PubMedState) -> PubMedState:
@@ -113,7 +117,7 @@ def create_websearch_graph():
 
 def create_synthesis_graph():
     """Create Synthesis agent as LangGraph."""
-    from src.tools.helper import get_llm
+    from src.tools.helper import get_llm, call_llm_with_retry
     from src.prompts.prompt import get_synthesis_prompt
     
     llm = get_llm()
@@ -150,7 +154,7 @@ def create_synthesis_graph():
                 sources_str=", ".join(sources),
                 conversation_context="[No previous conversation]"
             )
-            response = llm.invoke(prompt)
+            response = call_llm_with_retry(llm, prompt, context="for synthesis")
             result = response.content.strip() + (
                 "\n\n⚠️ **Medical Disclaimer:** This information is for educational purposes only. "
                 "Consult a qualified healthcare professional for medical guidance."
@@ -161,8 +165,12 @@ def create_synthesis_graph():
                 "sources_used": ["PubMed" if has_pubmed else None, "WebSearch" if has_websearch else None]
             }
         except Exception as e:
-            logger.error(f"Synthesis failed: {e}")
-            return {**state, "response": f"Error: {str(e)}", "sources_used": [], "error": str(e)}
+            logger.error(f"Synthesis failed after retries: {e}")
+            fallback_msg = (
+                "I apologize, but I'm temporarily unable to synthesize this information due to a technical issue. "
+                "Please try again in a moment. If the problem persists, consider consulting a healthcare professional directly."
+            )
+            return {**state, "response": fallback_msg, "sources_used": [], "error": str(e)}
     
     graph = StateGraph(SynthesisState)
     graph.add_node("collate", collate_content)
