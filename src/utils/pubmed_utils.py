@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 import time
 from typing import List, Dict, Optional
 
-from config import REQUEST_TIMEOUT, NCBI_ESEARCH_URL, NCBI_EFETCH_URL, MAX_RETRIES, RETRY_BACKOFF_FACTOR
+from src.config import REQUEST_TIMEOUT, NCBI_ESEARCH_URL, NCBI_EFETCH_URL, MAX_RETRIES, RETRY_BACKOFF_FACTOR
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +44,6 @@ def _extract_text_from_xml(element) -> Optional[str]:
         if text.strip()
     )
 
-def _extract_authors_from_article(article) -> List[str]:
-    """Extract and format author names from article element."""
-    authors = []
-    for author in article.findall(".//AuthorList/Author"):
-        first_name = author.findtext("ForeName", "").strip()
-        last_name = author.findtext("LastName", "").strip()
-        if first_name or last_name:
-            authors.append(f"{first_name} {last_name}".strip())
-    return authors
-
 def _extract_ids_from_article(article) -> Dict[str, str]:
     """Extract article identifiers (PMCID, DOI) as case-insensitive dict."""
     return {
@@ -84,24 +74,23 @@ def _fetch_pmc_full_text(pmcid: str) -> Optional[str]:
         return None
 
 def _build_markdown_for_article(pmid: str, article_data: Dict) -> str:
-    """Build markdown formatted string for a single article."""
+    """Build markdown formatted string for a single article (optimized for LLM)."""
     lines = [f"## {article_data['title']}\n"]
-    lines.append(f"**Authors:** {', '.join(article_data['authors']) or 'N/A'}\n")
-    lines.append(f"**Journal:** {article_data['journal'] or 'N/A'}\n")
-    lines.append(f"**Publication Date:** {article_data['pub_date'] or 'N/A'}\n")
-    lines.append(f"**PMID:** {pmid}\n")
-
-    if article_data.get("pmcid"):
-        lines.append(f"**PMCID:** {article_data['pmcid']}\n")
-
+    
+    # Article links for reference
+    lines.append(f"**PubMed:** https://pubmed.ncbi.nlm.nih.gov/{pmid}/\n")
     if article_data.get("doi"):
-        lines.append(f"**DOI:** {article_data['doi']}\n")
-
-    if article_data.get("abstract"):
-        lines.append(f"\n### Abstract\n\n{article_data['abstract']}\n")
-
+        lines.append(f"**DOI:** https://doi.org/{article_data['doi']}\n")
+    
+    lines.append("\n")
+    
+    # Prioritize full text, fallback to abstract
     if article_data.get("full_text"):
-        lines.append(f"\n### Full Text\n\n{article_data['full_text']}\n")
+        lines.append(f"{article_data['full_text']}\n")
+    elif article_data.get("abstract"):
+        lines.append(f"{article_data['abstract']}\n")
+    else:
+        lines.append("No content available.\n")
 
     return "".join(lines)
 
@@ -191,13 +180,9 @@ def extract_pubmed_articles_as_markdown(pmids: List[str]) -> str:
             pmcid = ids.get("pmc")
             doi = ids.get("doi")
 
-            # Build article data dictionary
+            # Build article data dictionary (optimized - only essential info)
             article_data = {
                 "title": _extract_text_from_xml(article.find(".//ArticleTitle")),
-                "authors": _extract_authors_from_article(article),
-                "journal": article.findtext(".//Journal/Title"),
-                "pub_date": _extract_text_from_xml(article.find(".//PubDate")),
-                "pmcid": pmcid,
                 "doi": doi,
                 "abstract": _extract_text_from_xml(article.find(".//Abstract")),
                 "full_text": _fetch_pmc_full_text(pmcid) if pmcid else None,

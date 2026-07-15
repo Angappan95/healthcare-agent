@@ -17,3 +17,7 @@ settings.json
 # md files
 *.md
 .github/instructions/wmt-copilot.instructions.md
+
+# Project-specific files
+*.langgraph*
+.langgraph_checkpoints

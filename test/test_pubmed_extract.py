@@ -32,7 +32,7 @@ def test_extract_pubmed_articles_valid_pmids():
     assert isinstance(result, str), "Expected markdown string result"
     assert len(result) > 0, "Expected non-empty markdown for valid PMIDs"
     assert "##" in result, "Expected markdown heading in result"
-    assert "PMID" in result, "Expected PMID in result"
+    assert "PubMed" in result, "Expected PubMed link in result"
 
 
 def test_extract_pubmed_articles_multiple_pmids():
@@ -67,7 +67,7 @@ def test_search_and_extract_diabetes_articles():
 
     # Step 3: Verify markdown structure
     assert "##" in markdown, "Expected markdown headings"
-    assert "PMID" in markdown, "Expected PMID information"
+    assert "PubMed" in markdown, "Expected PubMed link information"
     # Log first 500 chars of result
     preview = markdown[:500].replace('\n', ' ')
     logging.info(f"Markdown preview: {preview}...")
