@@ -3,9 +3,12 @@
 import logging
 from typing import TypedDict, Optional, List
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, START, END
 
 from src.utils.pubmed_utils import search_articles, extract_pubmed_articles_as_markdown
+
+from config import ARTICLE_CHAR_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +19,9 @@ def get_llm():
     """Get or create LLM instance."""
     global _llm_instance
     if _llm_instance is None:
-        _llm_instance = ChatOpenAI(model="gpt-5-nano", temperature=0, max_tokens=500)
+        # _llm_instance = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=1000)
+        _llm_instance = ChatGoogleGenerativeAI(model='gemini-3.1-flash-lite', temperature=0, max_tokens=1000)
     return _llm_instance
-
 
 class WorkflowState(TypedDict):
     """State schema for the PubMed analysis workflow."""
@@ -28,12 +31,10 @@ class WorkflowState(TypedDict):
     article_markdown: str
     response: str
 
-
 def receive_query(state: WorkflowState) -> WorkflowState:
     """Node 1: Store user query to state."""
     logger.info(f"Received query: {state['user_query']}")
     return state
-
 
 def extract_keywords(state: WorkflowState) -> WorkflowState:
     """Node 2: Extract keywords from query."""
@@ -44,7 +45,6 @@ def extract_keywords(state: WorkflowState) -> WorkflowState:
     state['extracted_keywords'] = keywords
     logger.info(f"Extracted keywords: {keywords}")
     return state
-
 
 def search_pubmed_articles(state: WorkflowState) -> WorkflowState:
     """Node 3: Search PubMed for articles using keywords."""
@@ -62,7 +62,6 @@ def search_pubmed_articles(state: WorkflowState) -> WorkflowState:
 
     return state
 
-
 def extract_article_info(state: WorkflowState) -> WorkflowState:
     """Node 4: Extract article info as markdown."""
     if not state.get('pmids'):
@@ -77,13 +76,22 @@ def extract_article_info(state: WorkflowState) -> WorkflowState:
 
     return state
 
-
 def generate_response(state: WorkflowState) -> WorkflowState:
     """Node 5: Generate response using LLM with query + articles."""
+
+    # Split articles and limit each to configured character count
+    article_markdown = state.get('article_markdown', 'No articles found.')
+    if article_markdown and article_markdown != 'No articles found.':
+        articles = article_markdown.split('\n---\n')
+        limited_articles = [article[:ARTICLE_CHAR_LIMIT] for article in articles]
+        formatted_articles = '\n---\n'.join(limited_articles)
+    else:
+        formatted_articles = article_markdown
+    
     prompt = f"""Based on the user query and PubMed articles, provide a comprehensive response.
 
 Query: {state['user_query']}
-Articles: {state.get('article_markdown', 'No articles found.')[:500]} # Limit to first 500 chars for prompt for testing
+Articles: {formatted_articles}
 
 Response should:
 1. Directly answer the query
@@ -94,15 +102,15 @@ Response should:
     try:
         logger.info("Generating response...")
         llm = get_llm()
+        logger.info("Prompt: %s", prompt)
         message = llm.invoke(prompt)
-        state['response'] = message.content
-        logger.info("Response generated")
+        state['response'] = message.content[0]['text']
+        logger.debug("Response generated: %s", message.content[0]['text'][:500])  
     except Exception as e:
         logger.error(f"Error generating response: {e}")
         state['response'] = f"Error: {e}"
 
     return state
-
 
 def build_workflow() -> StateGraph:
     """Build and compile the LangGraph workflow."""
@@ -125,7 +133,6 @@ def build_workflow() -> StateGraph:
     logger.info("Workflow compiled")
     return graph
 
-
 def run_workflow(user_query: str) -> WorkflowState:
     """Execute the workflow."""
     graph = build_workflow()
@@ -140,7 +147,6 @@ def run_workflow(user_query: str) -> WorkflowState:
     final_state = graph.invoke(initial_state)
     logger.info("Workflow completed")
     return final_state
-
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")

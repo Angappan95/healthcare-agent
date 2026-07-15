@@ -1,7 +1,7 @@
 [project]
-name = "data-analyser"
+name = "healthcare-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "A healthcare research agent using PubMed and LangGraph for medical literature analysis"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

@@ -6,12 +6,18 @@ Provides functions to search PubMed and extract article content using NCBI APIs.
 import logging
 import requests
 import xml.etree.ElementTree as ET
+import time
 from typing import List, Dict, Optional
 
-from config import REQUEST_TIMEOUT, NCBI_ESEARCH_URL, NCBI_EFETCH_URL
+from config import REQUEST_TIMEOUT, NCBI_ESEARCH_URL, NCBI_EFETCH_URL, MAX_RETRIES, RETRY_BACKOFF_FACTOR
 
 logger = logging.getLogger(__name__)
 
+# NCBI recommends identifying your application
+HEADERS = {
+    'User-Agent': 'PubMedAnalyzer/1.0',
+    'Connection': 'close'  # Disable keep-alive for better VPN compatibility
+}
 
 def _handle_request_error(error: Exception, context: str = "") -> None:
     """Log request-related errors."""
@@ -28,8 +34,6 @@ def _handle_request_error(error: Exception, context: str = "") -> None:
     else:
         logger.error(f"Request error: {error} {context}")
 
-
-
 def _extract_text_from_xml(element) -> Optional[str]:
     """Extract and clean text from an XML element."""
     if element is None:
@@ -39,7 +43,6 @@ def _extract_text_from_xml(element) -> Optional[str]:
         for text in element.itertext()
         if text.strip()
     )
-
 
 def _extract_authors_from_article(article) -> List[str]:
     """Extract and format author names from article element."""
@@ -51,7 +54,6 @@ def _extract_authors_from_article(article) -> List[str]:
             authors.append(f"{first_name} {last_name}".strip())
     return authors
 
-
 def _extract_ids_from_article(article) -> Dict[str, str]:
     """Extract article identifiers (PMCID, DOI) as case-insensitive dict."""
     return {
@@ -59,7 +61,6 @@ def _extract_ids_from_article(article) -> Dict[str, str]:
         for node in article.findall(".//ArticleId")
         if node.text
     }
-
 
 def _fetch_pmc_full_text(pmcid: str) -> Optional[str]:
     """
@@ -71,6 +72,7 @@ def _fetch_pmc_full_text(pmcid: str) -> Optional[str]:
         response = requests.get(
             NCBI_EFETCH_URL,
             params={"db": "pmc", "id": pmcid, "retmode": "xml"},
+            headers=HEADERS,
             timeout=REQUEST_TIMEOUT,
         )
         response.raise_for_status()
@@ -80,7 +82,6 @@ def _fetch_pmc_full_text(pmcid: str) -> Optional[str]:
     except (requests.exceptions.RequestException, ET.ParseError) as e:
         logger.warning(f"Failed to fetch PMC text for PMCID {pmcid}: {str(e)}")
         return None
-
 
 def _build_markdown_for_article(pmid: str, article_data: Dict) -> str:
     """Build markdown formatted string for a single article."""
@@ -104,7 +105,6 @@ def _build_markdown_for_article(pmid: str, article_data: Dict) -> str:
 
     return "".join(lines)
 
-
 def search_articles(query: str, max_results: int = 5) -> List[str]:
     """
     Search PubMed for articles matching the query and return list of PMIDs.
@@ -123,21 +123,32 @@ def search_articles(query: str, max_results: int = 5) -> List[str]:
         "retmax": max_results
     }
 
-    try:
-        response = requests.get(NCBI_ESEARCH_URL, params=search_params, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
+    # Retry logic for VPN/network resilience
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = requests.get(
+                NCBI_ESEARCH_URL, 
+                params=search_params, 
+                headers=HEADERS,
+                timeout=REQUEST_TIMEOUT
+            )
+            response.raise_for_status()
 
-        pmids = response.json().get("esearchresult", {}).get("idlist", [])
-        if pmids:
-            logger.info(f"Found {len(pmids)} articles for query: '{query}'")
-        else:
-            logger.warning(f"No articles found for query: '{query}'")
-        return pmids
+            pmids = response.json().get("esearchresult", {}).get("idlist", [])
+            if pmids:
+                logger.info(f"Found {len(pmids)} articles for query: '{query}'")
+            else:
+                logger.warning(f"No articles found for query: '{query}'")
+            return pmids
 
-    except requests.exceptions.RequestException as e:
-        _handle_request_error(e, f"for query '{query}'")
-        return []
-
+        except requests.exceptions.RequestException as e:
+            if attempt < MAX_RETRIES - 1:
+                wait_time = RETRY_BACKOFF_FACTOR ** attempt
+                logger.warning(f"Request failed (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {wait_time}s: {str(e)}")
+                time.sleep(wait_time)
+            else:
+                _handle_request_error(e, f"for query '{query}' after {MAX_RETRIES} attempts")
+                return []
 
 def extract_pubmed_articles_as_markdown(pmids: List[str]) -> str:
     """
@@ -152,7 +163,9 @@ def extract_pubmed_articles_as_markdown(pmids: List[str]) -> str:
         Returns empty string if no valid articles found.
     """
     markdown_output = []
+
     session = requests.Session()
+    session.headers.update(HEADERS)
 
     for pmid in pmids:
         try:
