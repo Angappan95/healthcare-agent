@@ -2,10 +2,9 @@
 
 import logging
 import uuid
-from typing import TypedDict, Optional, List, Dict, Any, Annotated
+from typing import Optional, List, Dict, Any
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 from src.agents.supervisor_agent import SupervisorAgent
@@ -14,30 +13,9 @@ from src.agents.websearch_agent import WebSearchAgent
 from src.agents.synthesis_agent import SynthesisAgent
 from src.tools.helper import get_llm
 from src.config import CHECKPOINT_DB_PATH
+from src.models import SupervisorState, WorkflowState
 
 logger = logging.getLogger(__name__)
-
-class SupervisorState(TypedDict):
-    """State schema for multi-agent workflow."""
-    # Built-in message handling with automatic reducer
-    messages: Annotated[list[BaseMessage], add_messages]
-    # Workflow control
-    user_query: str
-    routing_decision: str
-    agent_results: Dict[str, Any]
-    iteration_count: int
-    current_agent: str
-    agent_messages: List[Dict[str, Any]]
-    synthesis_complete: Optional[bool]
-    # Agent-specific data
-    extracted_keywords: List[str]
-    pmids: List[str]
-    article_markdown: str
-    web_search_markdown: Optional[str]
-    # Final output
-    response: str
-
-WorkflowState = SupervisorState
 
 _supervisor_agent = None
 _pubmed_agent = None
@@ -418,14 +396,3 @@ def print_conversation_history(state: SupervisorState):
     
     print("\n" + "="*80)
     print(f"Total turns: {len(turns)}")
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
-    
-    # Run multi-agent workflow
-    result = run_workflow("What are the latest treatments for type 2 diabetes?")
-    print("\n" + "="*80)
-    print("RESULT")
-    print("="*80)
-    print(f"Query: {result['user_query']}\nKeywords: {result['extracted_keywords']}")
-    print(f"Articles: {len(result['pmids'])}\nResponse:\n{result['response']}")

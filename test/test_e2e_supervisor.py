@@ -7,10 +7,12 @@ agent execution, synthesis, and final response generation.
 import pytest
 import logging
 import os
+
 from unittest.mock import patch, Mock, MagicMock
 from langchain_core.messages import HumanMessage, AIMessage
 
-from src.workflow import run_workflow, build_workflow, SupervisorState
+from src.workflow import run_workflow, build_workflow
+from src.models import SupervisorState
 from src.agents.supervisor_agent import SupervisorAgent
 from src.agents.pubmed_agent import PubMedAgent
 from src.agents.websearch_agent import WebSearchAgent
@@ -318,7 +320,3 @@ def test_run_all_e2e_validations():
     # Just a marker test to group e2e tests
     logger.info("Run with: pytest test/test_e2e_supervisor.py -v -m e2e")
     logger.info("="*80 + "\n")
-
-if __name__ == "__main__":
-    # Allow running directly for quick validation
-    pytest.main([__file__, "-v", "-m", "e2e", "-s"])

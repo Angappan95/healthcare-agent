@@ -18,18 +18,16 @@ from src.workflow import (
 
 logger = logging.getLogger(__name__)
 
-
 class TestWorkflowState:
     """Test SupervisorState schema."""
 
     def test_workflow_state_initialization(self):
         """Test that SupervisorState can be initialized with correct fields."""
         # The state is a TypedDict so we just verify structure
-        from src.workflow import SupervisorState
+        from src.models import SupervisorState
         assert 'messages' in SupervisorState.__annotations__
         assert 'user_query' in SupervisorState.__annotations__
         assert 'routing_decision' in SupervisorState.__annotations__
-
 
 class TestWorkflowBuilder:
     """Test workflow graph building."""
@@ -45,7 +43,6 @@ class TestWorkflowBuilder:
         graph = build_workflow(enable_checkpointing=True)
         assert graph is not None
         logger.info("Workflow graph built successfully with checkpointing")
-
 
 class TestWorkflowExecution:
     """Test full workflow execution."""
@@ -230,7 +227,3 @@ class TestFullWorkflow:
         assert 'response' in result or 'synthesis_complete' in result
 
         logger.info("Full workflow integration test passed")
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

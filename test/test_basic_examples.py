@@ -10,10 +10,10 @@ Tests cover:
 import pytest
 import logging
 from unittest.mock import patch, MagicMock
-from src.workflow import run_workflow, build_workflow, SupervisorState
+from src.workflow import run_workflow, build_workflow
+from src.models import SupervisorState
 
 logger = logging.getLogger(__name__)
-
 
 class TestBasicWorkflowExample:
     """Test basic workflow usage patterns."""
@@ -91,7 +91,6 @@ class TestBasicWorkflowExample:
         assert 'extracted_keywords' in result or 'pmids' in result or 'response' in result
         logger.info("Intermediate results test passed")
 
-
 class TestCustomWorkflowBuilding:
     """Test custom workflow building patterns."""
 
@@ -128,12 +127,8 @@ class TestCustomWorkflowBuilding:
     def test_workflow_state_initialization(self):
         """Test SupervisorState schema for custom workflows."""
         # Test that SupervisorState has required fields
-        from src.workflow import SupervisorState
+        from src.models import SupervisorState
         assert 'user_query' in SupervisorState.__annotations__
         assert 'routing_decision' in SupervisorState.__annotations__
         assert 'messages' in SupervisorState.__annotations__
         assert 'response' in SupervisorState.__annotations__
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

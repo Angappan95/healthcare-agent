@@ -370,6 +370,3 @@ class TestWorkflowIntegration:
         call_args = mock_graph.invoke.call_args
         config = call_args[0][1] if len(call_args[0]) > 1 else {}
         assert config.get('configurable', {}).get('thread_id') == "abc-123"
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

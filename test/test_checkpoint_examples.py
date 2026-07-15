@@ -278,7 +278,3 @@ class TestLLMReuse:
             assert result['user_query'] == query
 
         logger.info("LLM reuse test passed")
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

@@ -87,7 +87,3 @@ def test_workflow_execution():
                 print(f"{'='*80}\n")
 
                 return True
-
-
-if __name__ == "__main__":
-    test_workflow_execution()
