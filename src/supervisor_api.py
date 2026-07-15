@@ -42,12 +42,15 @@ from langchain_core.messages import SystemMessage
 # Create system message for the agent
 system_message = SystemMessage(content="""You are a healthcare information supervisor.
 
-Analyze queries and call:
-- search_pubmed_literature: for scientific/research queries
-- search_web_sources: for general health information
-- synthesize_information: always call at the end to generate final response
+Your job is to answer health questions by gathering information and providing a final answer.
 
-For complex queries, use both PubMed and WebSearch before synthesizing.""")
+For each query:
+1. Call search_web_sources to get general health information
+2. Optionally call search_pubmed_literature for research/scientific queries  
+3. After gathering information, ALWAYS provide a final answer based on the information you found
+
+IMPORTANT: You must ALWAYS generate a final text response to answer the user's question. 
+Do not just call tools - use the information from tools to create a comprehensive answer.""")
 
 def get_supervisor_agent():
     """Get or create supervisor agent with current LLM (supports fallback)."""
@@ -93,29 +96,35 @@ async def process_query(request: QueryRequest):
                 {"messages": [system_message, ("user", request.query)]},
                 config=run_config
             ):
+                logger.info(f"Agent event keys: {event.keys()}")
+                
                 if "agent" in event and (messages := event["agent"].get("messages")):
                     last_message = messages[-1]
-                if hasattr(last_message, 'content'):
-                    content = last_message.content
-                    # Handle both string and list content
-                    if isinstance(content, list):
-                        # Extract text from message list
-                        result = " ".join(
-                            item.get('text', '') if isinstance(item, dict) else str(item)
-                            for item in content
-                        )
-                    else:
-                        result = str(content)
+                    logger.info(f"Agent message type: {type(last_message).__name__}")
+                    if hasattr(last_message, 'content'):
+                        content = last_message.content
+                        # Handle both string and list content
+                        if isinstance(content, list):
+                            # Extract text from message list
+                            result = " ".join(
+                                item.get('text', '') if isinstance(item, dict) else str(item)
+                                for item in content
+                            )
+                        else:
+                            result = str(content)
+                        logger.info(f"Agent produced response: {len(result)} chars")
             
-            # Track which tools were called and collect their responses
-            if "tools" in event:
-                for tool_msg in event.get("tools", {}).get("messages", []):
-                    if hasattr(tool_msg, 'name'):
-                        tool_name = tool_msg.name
-                        tool_content = str(tool_msg.content) if hasattr(tool_msg, 'content') else ""
-                        
-                        # Extract URLs from tool response
-                        urls = extract_urls(tool_content)
+                # Track which tools were called and collect their responses
+                if "tools" in event:
+                    tool_messages = event.get("tools", {}).get("messages", [])
+                    logger.info(f"Tools event: {len(tool_messages)} tool messages")
+                    for tool_msg in tool_messages:
+                        if hasattr(tool_msg, 'name'):
+                            tool_name = tool_msg.name
+                            tool_content = str(tool_msg.content) if hasattr(tool_msg, 'content') else ""
+                            
+                            # Extract URLs from tool response
+                            urls = extract_urls(tool_content)
                         
                         if 'pubmed' in tool_name.lower():
                             agent_name = "PubMed Agent"

@@ -25,16 +25,25 @@ def health_check():
 @app.post("/runs/stream")
 def runs_stream(request: InvokeRequest):
     """LangGraph RemoteGraph endpoint with SSE streaming."""
+    import uuid
     def event_stream():
         try:
+            run_id = str(uuid.uuid4())
+            # Send metadata event
+            yield f"event: metadata\n"
+            yield f"data: {json.dumps({'run_id': run_id})}\n\n"
+            
+            # Execute graph
             result = graph.invoke(request.input, config=request.config)
             logger.info(f"PubMed completed: {list(result.keys())}")
-            # Send result as SSE event
-            yield f"event: data\n"
+            
+            # Send values event (what RemoteGraph expects for final state)
+            yield f"event: values\n"
             yield f"data: {json.dumps(result)}\n\n"
+            
             # Send end event
             yield f"event: end\n"
-            yield f"data: null\n\n"
+            yield f"data: {json.dumps({'run_id': run_id})}\n\n"
         except Exception as e:
             logger.error(f"PubMed failed: {e}")
             yield f"event: error\n"

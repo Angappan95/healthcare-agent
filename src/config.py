@@ -24,7 +24,7 @@ LLM_RETRY_BACKOFF_FACTOR = 2  # Exponential backoff: 1s, 2s, 4s, 8s
 # Primary and Fallback LLM Models
 PRIMARY_LLM_MODEL = "gemini-3.1-flash-lite"
 PRIMARY_LLM_PROVIDER = "google"
-FALLBACK_LLM_MODEL = "gemini-2.0-flash-lite"  # Gemini 2.0 Flash Lite (separate quota)
+FALLBACK_LLM_MODEL = "gemini-2.5-flash-lite"  # Gemini 2.5 Flash Lite (separate quota)
 FALLBACK_LLM_PROVIDER = "google"
 
 # LLM Prompt Configuration
