@@ -88,6 +88,7 @@ graph TB
     style WebSearch fill:#f3e5f5,stroke:#9c27b0
     style Synthesis fill:#e8f5e9,stroke:#4caf50
     style UI fill:#fce4ec,stroke:#e91e63
+```
 
 ### Agent Components
 
