@@ -68,6 +68,36 @@ def extract_urls(text: str) -> List[str]:
     url_pattern = r'https?://[^\s<>"\)\]]+'
     return re.findall(url_pattern, text)
 
+
+def update_source_details(tool_name: str, tool_content: str, source_details: Dict[str, SourceDetail], sources_used: List[str]) -> None:
+    """Normalize tool metadata into the per-agent source structure."""
+    if not hasattr(tool_name, "lower"):
+        return
+
+    urls = extract_urls(tool_content)
+
+    if 'pubmed' in tool_name.lower():
+        agent_name = "PubMed Agent"
+        description = "Scientific literature from NCBI PubMed"
+    elif 'websearch' in tool_name.lower() or 'web' in tool_name.lower():
+        agent_name = "WebSearch Agent"
+        description = "Credible health sources (CDC, NIH, Mayo Clinic)"
+    elif 'synthesis' in tool_name.lower():
+        agent_name = "Synthesis Agent"
+        description = "Multi-source information synthesis"
+    else:
+        return
+
+    sources_used.append(agent_name.replace(" Agent", ""))
+    if agent_name not in source_details:
+        source_details[agent_name] = SourceDetail(
+            agent=agent_name,
+            urls=[],
+            description=description
+        )
+    source_details[agent_name].urls.extend(urls)
+
+
 @app.post("/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
     start = time.time()
@@ -122,42 +152,7 @@ async def process_query(request: QueryRequest):
                         if hasattr(tool_msg, 'name'):
                             tool_name = tool_msg.name
                             tool_content = str(tool_msg.content) if hasattr(tool_msg, 'content') else ""
-                            
-                            # Extract URLs from tool response
-                            urls = extract_urls(tool_content)
-                        
-                        if 'pubmed' in tool_name.lower():
-                            agent_name = "PubMed Agent"
-                            sources_used.append("PubMed")
-                            if agent_name not in source_details:
-                                source_details[agent_name] = SourceDetail(
-                                    agent=agent_name,
-                                    urls=[],
-                                    description="Scientific literature from NCBI PubMed"
-                                )
-                            source_details[agent_name].urls.extend(urls)
-                            
-                        elif 'websearch' in tool_name.lower() or 'web' in tool_name.lower():
-                            agent_name = "WebSearch Agent"
-                            sources_used.append("WebSearch")
-                            if agent_name not in source_details:
-                                source_details[agent_name] = SourceDetail(
-                                    agent=agent_name,
-                                    urls=[],
-                                    description="Credible health sources (CDC, NIH, Mayo Clinic)"
-                                )
-                            source_details[agent_name].urls.extend(urls)
-                            
-                        elif 'synthesis' in tool_name.lower():
-                            agent_name = "Synthesis Agent"
-                            sources_used.append("Synthesis")
-                            if agent_name not in source_details:
-                                source_details[agent_name] = SourceDetail(
-                                    agent=agent_name,
-                                    urls=[],
-                                    description="Multi-source information synthesis"
-                                )
-                            source_details[agent_name].urls.extend(urls)
+                            update_source_details(tool_name, tool_content, source_details, sources_used)
         
         except Exception as agent_error:
             # Check if it's a rate limit error
@@ -187,38 +182,7 @@ async def process_query(request: QueryRequest):
                             if hasattr(tool_msg, 'name'):
                                 tool_name = tool_msg.name
                                 tool_content = str(tool_msg.content) if hasattr(tool_msg, 'content') else ""
-                                urls = extract_urls(tool_content)
-                                
-                                if 'pubmed' in tool_name.lower():
-                                    agent_name = "PubMed Agent"
-                                    sources_used.append("PubMed")
-                                    if agent_name not in source_details:
-                                        source_details[agent_name] = SourceDetail(
-                                            agent=agent_name,
-                                            urls=[],
-                                            description="Scientific literature from NCBI PubMed"
-                                        )
-                                    source_details[agent_name].urls.extend(urls)
-                                elif 'websearch' in tool_name.lower() or 'web' in tool_name.lower():
-                                    agent_name = "WebSearch Agent"
-                                    sources_used.append("WebSearch")
-                                    if agent_name not in source_details:
-                                        source_details[agent_name] = SourceDetail(
-                                            agent=agent_name,
-                                            urls=[],
-                                            description="Credible health sources (CDC, NIH, Mayo Clinic)"
-                                        )
-                                    source_details[agent_name].urls.extend(urls)
-                                elif 'synthesis' in tool_name.lower():
-                                    agent_name = "Synthesis Agent"
-                                    sources_used.append("Synthesis")
-                                    if agent_name not in source_details:
-                                        source_details[agent_name] = SourceDetail(
-                                            agent=agent_name,
-                                            urls=[],
-                                            description="Multi-source information synthesis"
-                                        )
-                                    source_details[agent_name].urls.extend(urls)
+                                update_source_details(tool_name, tool_content, source_details, sources_used)
                 
                 logger.info("✅ Fallback LLM succeeded")
             else:
